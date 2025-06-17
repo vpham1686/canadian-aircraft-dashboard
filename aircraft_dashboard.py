@@ -99,6 +99,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Select charts to display")
 chart_top_manu = st.sidebar.checkbox("Top 10 Manufacturers", value=True)
 chart_top_model = st.sidebar.checkbox("Top 10 Models", value=True)
+chart_top_operator = st.sidebar.checkbox("Top 10 Commercial Operators", value=True)
 chart_cat_dist = st.sidebar.checkbox("Aircraft Category Distribution", value=True)
 chart_owner_type = st.sidebar.checkbox("Ownership Type Share", value=True)
 chart_age_hist = st.sidebar.checkbox("Aircraft Age Distribution", value=True)
@@ -167,6 +168,24 @@ if chart_top_model and not flt.empty:
     fig_model.update_traces(**bar_lbl)
     fig_model.update_layout(xaxis_title="Model", yaxis_title="Count", **axis_fmt)
     st.plotly_chart(fig_model, use_container_width=True)
+
+if "Owner Name" in flt.columns or "Owner Name" in flt.columns:
+    st.subheader("Top 10 Commercial Operators (Entities)")
+    owner_label = "Owner Name" if "Owner Name" in flt.columns else "Owner Name"
+    op_df = (
+        flt[flt["Type of Owner"] == "Entity"]
+        .dropna(subset=[owner_label])
+        [owner_label]
+        .value_counts()
+        .head(10)
+        .reset_index()
+    )
+    op_df.columns = ["Operator", "Count"]
+    if not op_df.empty:
+        fig_op = px.bar(op_df, x="Operator", y="Count", title="Top 10 Airlines / Operators")
+        fig_op.update_traces(**bar_lbl)
+        fig_op.update_layout(xaxis_title="Operator", yaxis_title="Count", **axis_fmt)
+        st.plotly_chart(fig_op, use_container_width=True)
 
 if chart_cat_dist and not flt.empty:
     st.subheader("Aircraft Category Distribution")
