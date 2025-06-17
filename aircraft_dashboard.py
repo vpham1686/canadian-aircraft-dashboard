@@ -7,7 +7,7 @@ from datetime import datetime
 # Page & Theme
 # --------------------------------------------------
 st.set_page_config(
-    page_title="🌎 Canadian Aircraft Dashboard",
+    page_title="Canadian Aircraft Dashboard",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="✈️",
