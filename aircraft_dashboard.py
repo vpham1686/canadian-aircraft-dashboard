@@ -21,6 +21,8 @@ CANADA_PROVINCES = [
     "New Brunswick", "Nova Scotia", "Prince Edward Island", "Newfoundland and Labrador",
     "Yukon", "Northwest Territories", "Nunavut",
 ]
+MAJOR_MANUFACTURERS = ["Boeing", "Airbus", "Bombardier"]
+MAJOR_AIRLINES      = ["Air Canada", "WestJet"]
 
 # --------------------------------------------------
 # Data Loading
@@ -28,100 +30,155 @@ CANADA_PROVINCES = [
 @st.cache_data
 def load_data():
     xl_file = "Canadian Aircraft Registry.xlsx"
-    owners = pd.read_excel(xl_file, sheet_name="carsownr")
-    curr = pd.read_excel(xl_file, sheet_name="carscurr")
+    owners  = pd.read_excel(xl_file, sheet_name="carsownr")
+    curr    = pd.read_excel(xl_file, sheet_name="carscurr")
 
     df = curr.merge(owners, left_on="Mark", right_on="Registration Mark", how="left")
-    df["Number of Engines"] = pd.to_numeric(df["Number of Engines"], errors="coerce")
-    df["Aircraft Age"] = pd.to_numeric(df["Aircraft Age"], errors="coerce")
+
+    # Numeric cleaning
+    df["Number of Engines"]            = pd.to_numeric(df["Number of Engines"], errors="coerce")
+    df["Aircraft Age"]                 = pd.to_numeric(df["Aircraft Age"], errors="coerce")
     df["Year of Manufacture/Assembly"] = pd.to_numeric(df["Year of Manufacture/Assembly"], errors="coerce")
 
-    date_col = "Issue Date" if "Issue Date" in df.columns else "Modified Date"
+    date_col      = "Issue Date" if "Issue Date" in df.columns else "Modified Date"
     df["Reg Year"] = pd.to_datetime(df[date_col], errors="coerce").dt.year
 
+    # Optional weight column
     wcol = next((c for c in df.columns if "weight" in c.lower()), None)
     if wcol:
         df[wcol] = pd.to_numeric(df[wcol], errors="coerce")
 
+    # Keep Canadian provinces only
     df = df[df["Province (English)"].isin(CANADA_PROVINCES)]
     return df, wcol
 
 df, WEIGHT_COL = load_data()
 
 # --------------------------------------------------
-# Sidebar Filters
+# Sidebar
 # --------------------------------------------------
 st.sidebar.header("Filters")
 
-province = st.sidebar.multiselect("Province", CANADA_PROVINCES)
-category = st.sidebar.multiselect("Aircraft Category", sorted(df["Aircraft Category"].dropna().unique()))
-owner_type = st.sidebar.multiselect("Owner Type", sorted(df["Type of Owner"].dropna().unique()))
-engine_cat = st.sidebar.multiselect("Engine Category", sorted(df["Engine Category"].dropna().unique()))
+# --- Major manufacturer check-boxes ---------------------------------------
+st.sidebar.markdown("### Highlight Manufacturers")
+sel_boeing     = st.sidebar.checkbox("Boeing")
+sel_airbus     = st.sidebar.checkbox("Airbus")
+sel_bombardier = st.sidebar.checkbox("Bombardier")
 
+# --- Major airline check-boxes -------------------------------------------
+st.sidebar.markdown("### Highlight Airlines")
+sel_air_canada = st.sidebar.checkbox("Air Canada")
+sel_westjet    = st.sidebar.checkbox("WestJet")
+
+# Apply highlighted-checkbox logic
+df_highlight = df.copy()
+if sel_boeing or sel_airbus or sel_bombardier:
+    chosen_manu = []
+    if sel_boeing:       chosen_manu.append("Boeing")
+    if sel_airbus:       chosen_manu.append("Airbus")
+    if sel_bombardier:   chosen_manu.append("Bombardier")
+    df_highlight = df_highlight[df_highlight["Common Name"].isin(chosen_manu)]
+
+if sel_air_canada or sel_westjet:
+    chosen_ops = []
+    if sel_air_canada:   chosen_ops.append("Air Canada")
+    if sel_westjet:      chosen_ops.append("WestJet")
+    df_highlight = df_highlight[df_highlight["Owner Name"].isin(chosen_ops)]
+
+# Use df_highlight for all further filtering
+df = df_highlight
+
+# --- Standard multiselect filters ----------------------------------------
+province   = st.sidebar.multiselect("Province", CANADA_PROVINCES)
+category   = st.sidebar.multiselect("Aircraft Category",
+                                    sorted(df["Aircraft Category"].dropna().unique()))
+engine_cat = st.sidebar.multiselect("Engine Category",
+                                    sorted(df["Engine Category"].dropna().unique()))
+
+# Registered Purpose (Commercial / Private)
+purpose_filter = st.sidebar.multiselect("Registered Purpose",
+                                        ["Commercial", "Private"])
+
+# ----- Engine-count range slider with min==max guard ----------------------
 min_eng, max_eng = int(df["Number of Engines"].min()), int(df["Number of Engines"].max())
-col1, col2 = st.sidebar.columns(2)
-min_eng_input = col1.number_input("Min Engines", min_value=min_eng, max_value=max_eng, value=min_eng)
-max_eng_input = col2.number_input("Max Engines", min_value=min_eng, max_value=max_eng, value=max_eng)
-num_engines = (min_eng_input, max_eng_input)
+if min_eng == max_eng:          # only a single value available
+    st.sidebar.number_input("Engine Count", value=min_eng, disabled=True)
+    num_engines = (min_eng, max_eng)
+else:
+    num_engines = st.sidebar.slider("Engine Count", min_eng, max_eng,
+                                    (min_eng, max_eng))
 
+# ----- Year range slider (same guard) -------------------------------------
 min_year, max_year = int(df["Year of Manufacture/Assembly"].min()), int(df["Year of Manufacture/Assembly"].max())
-col1, col2 = st.sidebar.columns(2)
-min_year_input = col1.number_input("Min Year", min_value=min_year, max_value=max_year, value=min_year)
-max_year_input = col2.number_input("Max Year", min_value=min_year, max_value=max_year, value=max_year)
-year_range = (min_year_input, max_year_input)
+if min_year == max_year:
+    st.sidebar.number_input("Year of Manufacture", value=min_year, disabled=True)
+    year_range = (min_year, max_year)
+else:
+    year_range = st.sidebar.slider("Year of Manufacture", min_year, max_year,
+                                   (min_year, max_year))
 
+# ----- Age range slider ---------------------------------------------------
 min_age, max_age = int(df["Aircraft Age"].min()), int(df["Aircraft Age"].max())
-col1, col2 = st.sidebar.columns(2)
-min_age_input = col1.number_input("Min Age", min_value=min_age, max_value=max_age, value=min_age)
-max_age_input = col2.number_input("Max Age", min_value=min_age, max_value=max_age, value=max_age)
-age_range = (min_age_input, max_age_input)
+if min_age == max_age:
+    st.sidebar.number_input("Aircraft Age (yrs)", value=min_age, disabled=True)
+    age_range = (min_age, max_age)
+else:
+    age_range = st.sidebar.slider("Aircraft Age (yrs)", min_age, max_age,
+                                  (min_age, max_age))
 
+# ----- Weight range slider (if column exists) -----------------------------
 if WEIGHT_COL:
     min_w, max_w = int(df[WEIGHT_COL].min()), int(df[WEIGHT_COL].max())
-    col1, col2 = st.sidebar.columns(2)
-    min_w_input = col1.number_input("Min Weight", min_value=min_w, max_value=max_w, value=min_w)
-    max_w_input = col2.number_input("Max Weight", min_value=min_w, max_value=max_w, value=max_w)
-    weight_range = (min_w_input, max_w_input)
+    if min_w == max_w:
+        st.sidebar.number_input("Weight", value=min_w, disabled=True)
+        weight_range = (min_w, max_w)
+    else:
+        weight_range = st.sidebar.slider("Weight Range", min_w, max_w,
+                                         (min_w, max_w))
 else:
     weight_range = None
 
+# ----- Country filter -----------------------------------------------------
 country_cols = [c for c in df.columns if "country" in c.lower() and "manufact" in c.lower()]
-country_col = country_cols[0] if country_cols else None
+country_col  = country_cols[0] if country_cols else None
 if country_col:
-    country_sel = st.sidebar.multiselect("Country of Manufacture", sorted(df[country_col].dropna().unique()))
+    country_sel = st.sidebar.multiselect("Country of Manufacture",
+                                         sorted(df[country_col].dropna().unique()))
 else:
     country_sel = []
 
-search = st.sidebar.text_input("Search Common Name / Model")
+search = st.sidebar.text_input("Search Common / Model / Reg")
 
-# Chart visibility checkboxes
+# --------------------------------------------------
+# Chart Toggles
+# --------------------------------------------------
 st.sidebar.markdown("---")
-st.sidebar.subheader("Select charts to display")
-chart_top_manu = st.sidebar.checkbox("Top 10 Manufacturers", value=True)
-chart_top_model = st.sidebar.checkbox("Top 10 Models", value=True)
-chart_top_operator = st.sidebar.checkbox("Top 10 Commercial Operators", value=True)
-chart_cat_dist = st.sidebar.checkbox("Aircraft Category Distribution", value=True)
-chart_owner_type = st.sidebar.checkbox("Ownership Type Share", value=True)
-chart_age_hist = st.sidebar.checkbox("Aircraft Age Distribution", value=True)
-chart_prov_bar = st.sidebar.checkbox("Aircraft Count by Province", value=True)
-chart_reg_year = st.sidebar.checkbox("Registrations per Year", value=True)
-chart_owner_trend = st.sidebar.checkbox("Ownership Trend Over Time", value=True)
+chart_top_manu       = st.sidebar.checkbox("Top 10 Manufacturers", True)
+chart_top_model      = st.sidebar.checkbox("Top 10 Models", True)
+chart_top_operator   = st.sidebar.checkbox("Top 10 Commercial Operators", True)
+chart_cat_dist       = st.sidebar.checkbox("Aircraft Category Distribution", True)
+chart_purpose_share  = st.sidebar.checkbox("Registered Purpose Share", True)
+chart_age_hist       = st.sidebar.checkbox("Aircraft Age Histogram", True)
+chart_prov_bar       = st.sidebar.checkbox("Aircraft by Province", True)
+chart_reg_year       = st.sidebar.checkbox("Registrations per Year", True)
+chart_purpose_trend  = st.sidebar.checkbox("Purpose Trend Over Time", True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Created by Victor Pham**  \n_Last updated June 2025_")
 
 # --------------------------------------------------
-# Filter Application
+# Apply Filters
 # --------------------------------------------------
 flt = df.copy()
 if province:
     flt = flt[flt["Province (English)"].isin(province)]
 if category:
     flt = flt[flt["Aircraft Category"].isin(category)]
-if owner_type:
-    flt = flt[flt["Type of Owner"].isin(owner_type)]
 if engine_cat:
     flt = flt[flt["Engine Category"].isin(engine_cat)]
+if purpose_filter:
+    flt = flt[flt["Registered Purpose"].str.contains('|'.join(purpose_filter),
+                                                     case=False, na=False)]
 if country_sel and country_col:
     flt = flt[flt[country_col].isin(country_sel)]
 
@@ -134,7 +191,11 @@ if WEIGHT_COL and weight_range:
     flt = flt[flt[WEIGHT_COL].between(*weight_range)]
 
 if search:
-    mask = flt["Common Name"].str.contains(search, case=False, na=False) | flt["Model Name"].str.contains(search, case=False, na=False)
+    mask = (
+        flt["Common Name"].str.contains(search, case=False, na=False) |
+        flt["Model Name"].str.contains(search, case=False, na=False) |
+        flt["Mark"].str.contains(search, case=False, na=False)
+    )
     flt = flt[mask]
 
 flt = flt.replace("null", pd.NA)
@@ -143,100 +204,130 @@ total = len(flt)
 # --------------------------------------------------
 # Styling Helpers
 # --------------------------------------------------
-bar_lbl = dict(texttemplate="%{y}", textposition="outside")
-axis_fmt = dict(title_font=dict(size=14, family="Arial"))
+bar_lbl  = dict(texttemplate="%{y}", textposition="outside")
+axis_fmt = dict(title_font=dict(size=14, family="Arial"),
+                margin=dict(t=80, b=40))
 
 # --------------------------------------------------
-# Charts
+# Dashboard
 # --------------------------------------------------
-st.title("🌎 Canadian Aircraft Registry Dashboard")
+st.title("🛩️ Canadian Aircraft Registry Dashboard")
 
+# 1. Top Manufacturers
 if chart_top_manu and not flt.empty:
     st.subheader("Top 10 Aircraft Manufacturers")
     manu_df = flt["Manufacturer's Name"].value_counts().head(10).reset_index()
     manu_df.columns = ["Manufacturer", "Count"]
-    fig_manu = px.bar(manu_df, x="Manufacturer", y="Count", title="Top 10 Manufacturers")
-    fig_manu.update_traces(**bar_lbl)
-    fig_manu.update_layout(xaxis_title="Manufacturer", yaxis_title="Count", **axis_fmt)
-    st.plotly_chart(fig_manu, use_container_width=True)
+    fig = px.bar(manu_df, x="Manufacturer", y="Count",
+                 title="Top 10 Manufacturers")
+    fig.update_traces(**bar_lbl)
+    fig.update_layout(xaxis_title="Manufacturer", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
+# 2. Top Models
 if chart_top_model and not flt.empty:
     st.subheader("Top 10 Aircraft Models")
     model_df = flt["Model Name"].value_counts().head(10).reset_index()
     model_df.columns = ["Model", "Count"]
-    fig_model = px.bar(model_df, x="Model", y="Count", title="Top 10 Models")
-    fig_model.update_traces(**bar_lbl)
-    fig_model.update_layout(xaxis_title="Model", yaxis_title="Count", **axis_fmt)
-    st.plotly_chart(fig_model, use_container_width=True)
+    fig = px.bar(model_df, x="Model", y="Count", title="Top 10 Models")
+    fig.update_traces(**bar_lbl)
+    fig.update_layout(xaxis_title="Model", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
-if "Owner Name" in flt.columns or "Owner Name" in flt.columns:
-    st.subheader("Top 10 Commercial Operators (Entities)")
-    owner_label = "Owner Name" if "Owner Name" in flt.columns else "Owner Name"
+# 3. Top Commercial Operators
+if chart_top_operator and not flt.empty:
+    st.subheader("Top 10 Commercial Operators")
     op_df = (
-        flt[flt["Type of Owner"] == "Entity"]
-        .dropna(subset=[owner_label])
-        [owner_label]
+        flt[flt["Registered Purpose"].str.contains("Commercial", na=False)]
+        ["Owner Name"]
         .value_counts()
         .head(10)
         .reset_index()
     )
     op_df.columns = ["Operator", "Count"]
-    if not op_df.empty:
-        fig_op = px.bar(op_df, x="Operator", y="Count", title="Top 10 Airlines / Operators")
-        fig_op.update_traces(**bar_lbl)
-        fig_op.update_layout(xaxis_title="Operator", yaxis_title="Count", **axis_fmt)
-        st.plotly_chart(fig_op, use_container_width=True)
+    fig = px.bar(op_df, x="Operator", y="Count",
+                 title="Top 10 Airlines / Operators")
+    fig.update_traces(**bar_lbl)
+    fig.update_layout(xaxis_title="Operator", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
+# 4. Aircraft Category Distribution
 if chart_cat_dist and not flt.empty:
     st.subheader("Aircraft Category Distribution")
-    fig_cat = px.pie(flt, names="Aircraft Category", title="Aircraft Category Share", hole=.45)
-    fig_cat.update_traces(hovertemplate="%{label}: %{value} (%{percent})")
-    fig_cat.add_annotation(text=f"{total}", x=0.5, y=0.5, font_size=18, showarrow=False)
-    st.plotly_chart(fig_cat, use_container_width=True)
+    fig = px.pie(flt, names="Aircraft Category",
+                 hole=0.45, title="Aircraft Category Share")
+    fig.update_traces(hovertemplate="%{label}: %{value} (%{percent})")
+    fig.add_annotation(text=f"{total}", x=0.5, y=0.5,
+                       font_size=18, showarrow=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-if chart_owner_type and not flt.empty:
-    st.subheader("Ownership Type Share")
-    fig_owner = px.pie(flt, names="Type of Owner", title="Entity vs Individual", hole=.45)
-    fig_owner.update_traces(hovertemplate="%{label}: %{value} (%{percent})")
-    fig_owner.add_annotation(text=f"{total}", x=0.5, y=0.5, font_size=18, showarrow=False)
-    st.plotly_chart(fig_owner, use_container_width=True)
+# 5. Registered Purpose Share
+if chart_purpose_share and not flt.empty:
+    st.subheader("Registered Purpose Share")
+    fig = px.pie(flt, names="Registered Purpose",
+                 hole=0.45, title="Commercial vs Private")
+    fig.update_traces(hovertemplate="%{label}: %{value} (%{percent})")
+    fig.add_annotation(text=f"{total}", x=0.5, y=0.5,
+                       font_size=18, showarrow=False)
+    st.plotly_chart(fig, use_container_width=True)
 
+# 6. Aircraft Age Histogram
 if chart_age_hist and not flt.empty:
     st.subheader("Aircraft Age Distribution")
-    fig_age = px.histogram(flt.dropna(subset=["Aircraft Age"]), x="Aircraft Age", nbins=30, title="Aircraft Age Histogram")
-    fig_age.update_layout(xaxis_title="Aircraft Age", yaxis_title="Count", **axis_fmt)
-    st.plotly_chart(fig_age, use_container_width=True)
+    fig = px.histogram(flt.dropna(subset=["Aircraft Age"]),
+                       x="Aircraft Age", nbins=30,
+                       title="Aircraft Age Histogram")
+    fig.update_layout(xaxis_title="Aircraft Age", yaxis_title="Count",
+                      **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
+# 7. Aircraft by Province
 if chart_prov_bar and not flt.empty:
     st.subheader("Aircraft Count by Province")
     prov_df = flt["Province (English)"].value_counts().reset_index()
     prov_df.columns = ["Province", "Count"]
-    fig_prov = px.bar(prov_df, x="Province", y="Count", title="Aircraft Count by Province")
-    fig_prov.update_traces(**bar_lbl)
-    fig_prov.update_layout(xaxis_title="Province", yaxis_title="Count", **axis_fmt)
-    st.plotly_chart(fig_prov, use_container_width=True)
+    fig = px.bar(prov_df, x="Province", y="Count",
+                 title="Aircraft Count by Province")
+    fig.update_traces(**bar_lbl)
+    fig.update_layout(xaxis_title="Province", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
-if chart_reg_year:
+# 8. Registrations per Year
+if chart_reg_year and not flt.empty:
     st.subheader("Registrations per Year")
-    reg_df = flt.dropna(subset=["Reg Year"]).groupby("Reg Year").size().reset_index(name="Count")
-    if not reg_df.empty:
-        fig_reg = px.line(reg_df, x="Reg Year", y="Count", markers=True, title="New Registrations by Year")
-        fig_reg.update_layout(xaxis_title="Year", yaxis_title="Count", **axis_fmt)
-        st.plotly_chart(fig_reg, use_container_width=True)
+    reg_df = (
+        flt.dropna(subset=["Reg Year"])
+        .groupby("Reg Year")
+        .size()
+        .reset_index(name="Count")
+    )
+    fig = px.line(reg_df, x="Reg Year", y="Count",
+                  markers=True, title="New Registrations by Year")
+    fig.update_layout(xaxis_title="Year", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
-if chart_owner_trend:
-    st.subheader("Ownership Trend Over Time")
-    trend_df = flt.dropna(subset=["Reg Year"]).groupby(["Reg Year", "Type of Owner"]).size().reset_index(name="Count")
-    if not trend_df.empty:
-        fig_trend = px.line(trend_df, x="Reg Year", y="Count", color="Type of Owner", markers=True, title="Entity vs Individual Over Time")
-        fig_trend.update_layout(xaxis_title="Year", yaxis_title="Count", **axis_fmt)
-        st.plotly_chart(fig_trend, use_container_width=True)
+# 9. Purpose Trend Over Time
+if chart_purpose_trend and not flt.empty:
+    st.subheader("Purpose Trend Over Time")
+    trend_df = (
+        flt.dropna(subset=["Reg Year"])
+        .groupby(["Reg Year", "Registered Purpose"])
+        .size()
+        .reset_index(name="Count")
+    )
+    fig = px.line(trend_df, x="Reg Year", y="Count",
+                  color="Registered Purpose", markers=True,
+                  title="Commercial vs Private Over Time")
+    fig.update_layout(xaxis_title="Year", yaxis_title="Count", **axis_fmt)
+    st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------------------------------
-# Drill-Down Data Expander
+# Drill-Down Table
 # --------------------------------------------------
 with st.expander("View Filtered Dataset"):
     st.dataframe(flt)
 
 # --------------------------------------------------
-# End
+# Footer
+# --------------------------------------------------
+st.caption(f"Dataset size after filters: {total} rows • Rendered {datetime.now():%Y-%m-%d %H:%M:%S}")
