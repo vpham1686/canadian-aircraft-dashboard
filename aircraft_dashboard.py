@@ -21,15 +21,15 @@ CANADA_PROVINCES = [
     "New Brunswick", "Nova Scotia", "Prince Edward Island", "Newfoundland and Labrador",
     "Yukon", "Northwest Territories", "Nunavut",
 ]
-MAJOR_MANUFACTURERS = ["Boeing", "Airbus", "Bombardier"]
-MAJOR_AIRLINES      = ["Air Canada", "WestJet"]
+MAJOR_MANUFACTURERS = ["Boeing", "Airbus", "Bombardier", "Embraer"]
+MAJOR_AIRLINES      = ["Air Canada", "WestJet", "Skyservice", "Porter", "Air  Transat"]
 
 # --------------------------------------------------
 # Data Loading
 # --------------------------------------------------
 @st.cache_data
 def load_data():
-    xl_file = "Canadian Aircraft Registry.xlsx"
+    xl_file = "Canadian Aircraft Registry Automated.xlsx"
     owners  = pd.read_excel(xl_file, sheet_name="carsownr")
     curr    = pd.read_excel(xl_file, sheet_name="carscurr")
 
@@ -64,25 +64,35 @@ st.sidebar.markdown("### Highlight Manufacturers")
 sel_boeing     = st.sidebar.checkbox("Boeing")
 sel_airbus     = st.sidebar.checkbox("Airbus")
 sel_bombardier = st.sidebar.checkbox("Bombardier")
+sel_embraer   = st.sidebar.checkbox("Embraer")
 
 # --- Major airline check-boxes -------------------------------------------
 st.sidebar.markdown("### Highlight Airlines")
 sel_air_canada = st.sidebar.checkbox("Air Canada")
 sel_westjet    = st.sidebar.checkbox("WestJet")
+sel_skyservice = st.sidebar.checkbox("Skyservice")
+sel_porter     = st.sidebar.checkbox("Porter")
+sel_air_transat = st.sidebar.checkbox("Air Transat")
 
 # Apply highlighted-checkbox logic
 df_highlight = df.copy()
-if sel_boeing or sel_airbus or sel_bombardier:
+if sel_boeing or sel_airbus or sel_bombardier or sel_embraer:
     chosen_manu = []
     if sel_boeing:       chosen_manu.append("Boeing")
     if sel_airbus:       chosen_manu.append("Airbus")
     if sel_bombardier:   chosen_manu.append("Bombardier")
+    if sel_embraer:      chosen_manu.append("Embraer")
     df_highlight = df_highlight[df_highlight["Common Name"].isin(chosen_manu)]
 
-if sel_air_canada or sel_westjet:
+if sel_air_canada or sel_westjet or sel_skyservice or sel_porter or sel_air_transat:
     chosen_ops = []
     if sel_air_canada:   chosen_ops.append("Air Canada")
     if sel_westjet:      chosen_ops.append("WestJet")
+    if sel_skyservice:   chosen_ops.append("Skyservice Business Aviation Inc.")
+    if sel_porter:
+                        chosen_ops.append("Porter Airlines Inc.")
+                        chosen_ops.append("Porter Airlines (Canada) Limited")
+    if sel_air_transat:  chosen_ops.append("Air Transat A T Inc.")
     df_highlight = df_highlight[df_highlight["Owner Name"].isin(chosen_ops)]
 
 # Use df_highlight for all further filtering
@@ -133,7 +143,7 @@ if WEIGHT_COL:
         st.sidebar.number_input("Weight", value=min_w, disabled=True)
         weight_range = (min_w, max_w)
     else:
-        weight_range = st.sidebar.slider("Weight Range", min_w, max_w,
+        weight_range = st.sidebar.slider("Weight Range (kg)", min_w, max_w,
                                          (min_w, max_w))
 else:
     weight_range = None
@@ -153,9 +163,9 @@ search = st.sidebar.text_input("Search Common / Model / Reg")
 # Chart Toggles
 # --------------------------------------------------
 st.sidebar.markdown("---")
-chart_top_manu       = st.sidebar.checkbox("Top 10 Manufacturers", True)
-chart_top_model      = st.sidebar.checkbox("Top 10 Models", True)
-chart_top_operator   = st.sidebar.checkbox("Top 10 Commercial Operators", True)
+chart_top_manu       = st.sidebar.checkbox("Top 15 Manufacturers", True)
+chart_top_model      = st.sidebar.checkbox("Top 15 Models", True)
+chart_top_operator   = st.sidebar.checkbox("Top 15 Commercial Operators", True)
 chart_cat_dist       = st.sidebar.checkbox("Aircraft Category Distribution", True)
 chart_purpose_share  = st.sidebar.checkbox("Registered Purpose Share", True)
 chart_age_hist       = st.sidebar.checkbox("Aircraft Age Histogram", True)
@@ -215,41 +225,46 @@ st.title("🛩️ Canadian Aircraft Registry Dashboard")
 
 # 1. Top Manufacturers
 if chart_top_manu and not flt.empty:
-    st.subheader("Top 10 Aircraft Manufacturers")
-    manu_df = flt["Manufacturer's Name"].value_counts().head(10).reset_index()
+    st.subheader("Top 15 Aircraft Manufacturers")
+    manu_df = flt["Common Name"].value_counts().head(15).reset_index()
     manu_df.columns = ["Manufacturer", "Count"]
     fig = px.bar(manu_df, x="Manufacturer", y="Count",
-                 title="Top 10 Manufacturers")
+                 title="Top 15 Manufacturers")
     fig.update_traces(**bar_lbl)
     fig.update_layout(xaxis_title="Manufacturer", yaxis_title="Count", **axis_fmt)
     st.plotly_chart(fig, use_container_width=True)
 
 # 2. Top Models
 if chart_top_model and not flt.empty:
-    st.subheader("Top 10 Aircraft Models")
-    model_df = flt["Model Name"].value_counts().head(10).reset_index()
+    st.subheader("Top 15 Aircraft Models")
+    model_df = flt["Model Name"].value_counts().head(15).reset_index()
     model_df.columns = ["Model", "Count"]
-    fig = px.bar(model_df, x="Model", y="Count", title="Top 10 Models")
+    fig = px.bar(model_df, x="Model", y="Count", title="Top 15 Models")
     fig.update_traces(**bar_lbl)
     fig.update_layout(xaxis_title="Model", yaxis_title="Count", **axis_fmt)
     st.plotly_chart(fig, use_container_width=True)
 
 # 3. Top Commercial Operators
 if chart_top_operator and not flt.empty:
-    st.subheader("Top 10 Commercial Operators")
+    st.subheader("Top 15 Commercial Operators")
     op_df = (
         flt[flt["Registered Purpose"].str.contains("Commercial", na=False)]
         ["Owner Name"]
         .value_counts()
-        .head(10)
+        .head(15)
         .reset_index()
     )
     op_df.columns = ["Operator", "Count"]
+    
+    # Truncate long names
+    op_df["Operator"] = op_df["Operator"].apply(lambda x: x if len(x) <= 25 else x[:22] + "...")
+
     fig = px.bar(op_df, x="Operator", y="Count",
-                 title="Top 10 Airlines / Operators")
+                 title="Top 15 Airlines / Operators")
     fig.update_traces(**bar_lbl)
     fig.update_layout(xaxis_title="Operator", yaxis_title="Count", **axis_fmt)
     st.plotly_chart(fig, use_container_width=True)
+
 
 # 4. Aircraft Category Distribution
 if chart_cat_dist and not flt.empty:
