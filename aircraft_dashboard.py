@@ -35,12 +35,18 @@ def load_data():
 
     df = curr.merge(owners, left_on="Mark", right_on="Registration Mark", how="left")
 
-    # Numeric cleaning
-    df["Number of Engines"]            = pd.to_numeric(df["Number of Engines"], errors="coerce")
-    df["Aircraft Age"]                 = pd.to_numeric(df["Aircraft Age"], errors="coerce")
-    df["Year of Manufacture/Assembly"] = pd.to_numeric(df["Year of Manufacture/Assembly"], errors="coerce")
+    # ------------------------------------------------------------------
+    # Recompute YEAR & AGE (pandas does NOT evaluate Excel formulas)
+    manuf_dt = pd.to_datetime(df["Date of Manufacture/Assembly"], errors="coerce")
+    df["Year of Manufacture/Assembly"] = manuf_dt.dt.year.astype("Int64")
+    current_year = datetime.now().year
+    df["Aircraft Age"] = current_year - df["Year of Manufacture/Assembly"]
+    # ------------------------------------------------------------------
 
-    date_col      = "Issue Date" if "Issue Date" in df.columns else "Modified Date"
+    # Numeric cleaning
+    df["Number of Engines"] = pd.to_numeric(df["Number of Engines"], errors="coerce")
+
+    date_col  = "Issue Date" if "Issue Date" in df.columns else "Modified Date"
     df["Reg Year"] = pd.to_datetime(df[date_col], errors="coerce").dt.year
 
     # Optional weight column
@@ -64,14 +70,14 @@ st.sidebar.markdown("### Highlight Manufacturers")
 sel_boeing     = st.sidebar.checkbox("Boeing")
 sel_airbus     = st.sidebar.checkbox("Airbus")
 sel_bombardier = st.sidebar.checkbox("Bombardier")
-sel_embraer   = st.sidebar.checkbox("Embraer")
+sel_embraer    = st.sidebar.checkbox("Embraer")
 
 # --- Major airline check-boxes -------------------------------------------
 st.sidebar.markdown("### Highlight Airlines")
-sel_air_canada = st.sidebar.checkbox("Air Canada")
-sel_westjet    = st.sidebar.checkbox("WestJet")
-sel_skyservice = st.sidebar.checkbox("Skyservice")
-sel_porter     = st.sidebar.checkbox("Porter")
+sel_air_canada  = st.sidebar.checkbox("Air Canada")
+sel_westjet     = st.sidebar.checkbox("WestJet")
+sel_skyservice  = st.sidebar.checkbox("Skyservice")
+sel_porter      = st.sidebar.checkbox("Porter")
 sel_air_transat = st.sidebar.checkbox("Air Transat")
 
 # Apply highlighted-checkbox logic
@@ -90,8 +96,8 @@ if sel_air_canada or sel_westjet or sel_skyservice or sel_porter or sel_air_tran
     if sel_westjet:      chosen_ops.append("WestJet")
     if sel_skyservice:   chosen_ops.append("Skyservice Business Aviation Inc.")
     if sel_porter:
-                        chosen_ops.append("Porter Airlines Inc.")
-                        chosen_ops.append("Porter Airlines (Canada) Limited")
+        chosen_ops.append("Porter Airlines Inc.")
+        chosen_ops.append("Porter Airlines (Canada) Limited")
     if sel_air_transat:  chosen_ops.append("Air Transat A T Inc.")
     df_highlight = df_highlight[df_highlight["Owner Name"].isin(chosen_ops)]
 
@@ -119,7 +125,8 @@ else:
                                     (min_eng, max_eng))
 
 # ----- Year range slider (same guard) -------------------------------------
-min_year, max_year = int(df["Year of Manufacture/Assembly"].min()), int(df["Year of Manufacture/Assembly"].max())
+min_year = int(df["Year of Manufacture/Assembly"].min())
+max_year = int(df["Year of Manufacture/Assembly"].max())
 if min_year == max_year:
     st.sidebar.number_input("Year of Manufacture", value=min_year, disabled=True)
     year_range = (min_year, max_year)
@@ -128,7 +135,8 @@ else:
                                    (min_year, max_year))
 
 # ----- Age range slider ---------------------------------------------------
-min_age, max_age = int(df["Aircraft Age"].min()), int(df["Aircraft Age"].max())
+min_age = int(df["Aircraft Age"].min())
+max_age = int(df["Aircraft Age"].max())
 if min_age == max_age:
     st.sidebar.number_input("Aircraft Age (yrs)", value=min_age, disabled=True)
     age_range = (min_age, max_age)
@@ -174,7 +182,7 @@ chart_reg_year       = st.sidebar.checkbox("Registrations per Year", True)
 chart_purpose_trend  = st.sidebar.checkbox("Purpose Trend Over Time", True)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**Created by Victor Pham**  \n_Last updated June 2025_")
+st.sidebar.markdown("**Created by Victor Pham**  \n_Last updated August 2025_")
 
 # --------------------------------------------------
 # Apply Filters
@@ -255,16 +263,14 @@ if chart_top_operator and not flt.empty:
         .reset_index()
     )
     op_df.columns = ["Operator", "Count"]
-    
-    # Truncate long names
-    op_df["Operator"] = op_df["Operator"].apply(lambda x: x if len(x) <= 25 else x[:22] + "...")
-
+    op_df["Operator"] = op_df["Operator"].apply(
+        lambda x: x if len(x) <= 25 else x[:22] + "…"
+    )
     fig = px.bar(op_df, x="Operator", y="Count",
                  title="Top 15 Airlines / Operators")
     fig.update_traces(**bar_lbl)
     fig.update_layout(xaxis_title="Operator", yaxis_title="Count", **axis_fmt)
     st.plotly_chart(fig, use_container_width=True)
-
 
 # 4. Aircraft Category Distribution
 if chart_cat_dist and not flt.empty:
